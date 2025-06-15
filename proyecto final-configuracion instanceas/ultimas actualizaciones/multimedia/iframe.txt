@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Chat embebido</title>
+<style>
+  :root {
+    --save-gut: max(env(safe-area-inset-left), 3.3%);
+  }
+  .requestIframe {
+    width: 100%;
+    height: 85vh;
+    border: none;
+    margin-top: -5px;
+  }
+</style>
+</head>
+<body>
+  <div class="sections">
+    <iframe class="requestIframe" src="https://chat-david2.duckdns.org"></iframe>
+  </div>
+</body>
+</html>

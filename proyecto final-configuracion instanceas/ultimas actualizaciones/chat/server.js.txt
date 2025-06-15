@@ -1,0 +1,151 @@
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const mysql = require('mysql2');
+const path = require('path');
+const bodyParser = require('body-parser');
+const bcrypt = require('bcrypt');
+const moment = require('moment-timezone');
+const multer = require('multer');
+const fs = require('fs');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+// Configuración de multer para subida de archivos
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, 'public', 'uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Solo se permiten imágenes'), false);
+    }
+  }
+});
+
+const db = mysql.createConnection({
+  host: 'chat-db.cbkoiyo2syaz.us-east-1.rds.amazonaws.com',
+  user: 'admin',
+  password: 'admin123',
+  database: 'chat-db'
+});
+
+app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+
+app.post('/login', (req, res) => {
+  const { usuario, contrasena } = req.body;
+
+  db.query('SELECT * FROM usuarios WHERE username = ?', [usuario], (err, results) => {
+    if (err) return res.status(500).send('Error en la base de datos');
+    if (results.length === 0) return res.status(401).send('Usuario no encontrado');
+
+    const user = results[0];
+
+    bcrypt.compare(contrasena, user.password, (err, match) => {
+      if (err) return res.status(500).send('Error al verificar la contraseña');
+      if (!match) return res.status(401).send('Contraseña incorrecta');
+
+      res.sendStatus(200);
+    });
+  });
+});
+
+app.post('/upload', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).send('No se subió ningún archivo');
+  }
+
+  res.json({
+    url: `/uploads/${req.file.filename}`,
+    originalName: req.file.originalname
+  });
+});
+
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).send(err.message);
+  } else if (err) {
+    return res.status(500).send(err.message);
+  }
+  next();
+});
+
+const usuariosConectados = new Set();
+
+io.on('connection', (socket) => {
+  console.log('Nuevo cliente conectado');
+
+  socket.on('nuevoUsuario', (usuario) => {
+    usuariosConectados.add(usuario);
+    io.emit('actualizarUsuarios', Array.from(usuariosConectados));
+  });
+
+  db.query(
+    'SELECT username AS usuario, message AS mensaje, timestamp, is_image FROM mensajes ORDER BY id DESC LIMIT 20',
+    (err, results) => {
+      if (!err) {
+        const historial = results.reverse().map(row => ({
+          usuario: row.usuario,
+          mensaje: row.mensaje,
+          hora: moment(row.timestamp).tz('Europe/Madrid').format('HH:mm'),
+          esImagen: row.is_image === 1
+        }));
+        socket.emit('historial', historial);
+      }
+    }
+  );
+
+  socket.on('borrar_mensajes', () => {
+    db.query('DELETE FROM mensajes', (err) => {
+      if (err) {
+        console.error('Error al borrar mensajes:', err);
+        return;
+      }
+      io.emit('mensajes_borrados');
+    });
+  });
+
+  socket.on('mensaje', (msg) => {
+    const hora = moment().tz('Europe/Madrid').format('HH:mm');
+    const esImagen = msg.esImagen || false;
+
+    db.query('INSERT INTO mensajes (username, message, is_image) VALUES (?, ?, ?)',
+      [msg.usuario, msg.mensaje, esImagen ? 1 : 0]);
+
+    io.emit('mensaje', {
+      usuario: msg.usuario,
+      mensaje: msg.mensaje,
+      hora: hora,
+      esImagen: esImagen
+    });
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Cliente desconectado');
+  });
+});
+
+server.listen(3000, () => {
+  console.log('Servidor escuchando en puerto 3000');
+});

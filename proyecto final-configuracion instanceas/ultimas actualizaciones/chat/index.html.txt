@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat Seguro</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      color: #e1e1e1;
+      background-image: url('https://wallpapers.com/images/hd/the-nightmare-before-christmas-faces-of-jack-nezhqzoo8asocduo.jpg');
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+      position: relative;
+    }
+
+    /* Capa oscura para reducir brillo del fondo */
+    body::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: -1;
+    }
+
+    body.chat-activo {
+      background-image: url('https://wallpapers.com/images/hd/lord-of-the-rings-wallpaper-profundidad-de-campo-hat8mbmpc01phd3e.jpg');
+    }
+
+    #content-wrapper {
+      padding: 10px;
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .header-container {
+      display: flex;
+      align-items: center;
+    }
+
+    h1 {
+      color: #ffa500;
+      margin-top: 0;
+      margin-left: 10px;
+      text-align: left;
+      flex-shrink: 0;
+      font-size: 1.5rem;
+      flex-grow: 1;
+    }
+
+    input, button {
+      padding: 10px;
+      margin: 5px;
+      border-radius: 4px;
+      border: none;
+      font-size: 1rem;
+    }
+
+    input {
+      background-color: #2b2b2b;
+      color: #f0f0f0;
+      border: 1px solid #444;
+    }
+
+    button {
+      background-color: #66ccff;
+      color: black;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    button:hover {
+      background-color: #3399cc;
+    }
+
+    #mensajes {
+      list-style-type: none;
+      padding: 0;
+      overflow-y: auto;
+      flex-grow: 1;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 70px;
+      margin-right: 0;
+    }
+
+    @media (min-width: 768px) {
+      #mensajes {
+        margin-right: 220px;
+      }
+    }
+
+    #mensajes li {
+      display: flex;
+      max-width: 90%;
+      animation: fadeInUp 0.3s ease forwards;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+
+    #mensajes li.mio {
+      justify-content: flex-start;
+      align-self: flex-start;
+    }
+
+    #mensajes li.otro {
+      justify-content: flex-end;
+      align-self: flex-end;
+    }
+
+    .burbuja {
+      border-radius: 10px;
+      padding: 10px 15px;
+      position: relative;
+      color: #f0f0f0;
+      border-left: 4px solid #66ccff;
+      max-width: 100%;
+      word-break: break-word;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      transition: box-shadow 0.3s ease;
+    }
+
+    .burbuja:hover {
+      box-shadow: 0 4px 10px rgba(0,0,0,0.6);
+    }
+
+    .mio .burbuja {
+      background-color: #4a90e2;
+      border-left-color: #357ABD;
+    }
+
+    .otro .burbuja {
+      background-color: #3c3c3c;
+      border-left-color: #66ccff;
+    }
+
+    .burbuja .contenido {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .burbuja .hora {
+      font-size: 0.75em;
+      color: #ccc;
+      text-align: right;
+      margin-top: 5px;
+    }
+
+    #formulario {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background-color: rgba(43, 43, 43, 0.95);
+      display: flex;
+      gap: 5px;
+      padding: 10px;
+      box-sizing: border-box;
+      z-index: 1000;
+      align-items: center;
+    }
+
+    #input {
+      flex: 1;
+      margin: 0;
+      padding: 10px;
+      font-size: 1rem;
+      max-width: 100%;
+    }
+
+    @media (min-width: 768px) {
+      #input {
+        max-width: calc(100% - 220px);
+      }
+    }
+
+    #logout-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background-color: #ff4d4d;
+      padding: 6px 10px;
+      font-size: 0.85rem;
+      z-index: 1001;
+    }
+
+    #logout-btn:hover {
+      background-color: #cc0000;
+    }
+
+    #clear-btn {
+      background-color: #ffa500;
+      color: black;
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-left: 5px;
+      transition: background 0.3s;
+    }
+
+    #clear-btn:hover {
+      background-color: #cc8400;
+    }
+
+    #chat-section {
+      display: none;
+      flex-direction: column;
+      flex-grow: 1;
+      height: 100%;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #login-section {
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    #login-form {
+      width: 100%;
+      max-width: 400px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Estilos para la lista de usuarios conectados */
+    #usuarios-conectados {
+      position: fixed;
+      right: 10px;
+      top: 50px;
+      background-color: rgba(43, 43, 43, 0.9);
+      border-radius: 8px;
+      padding: 10px;
+      width: 200px;
+      max-height: calc(100% - 80px);
+      overflow-y: auto;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+      z-index: 1000;
+      transition: transform 0.3s ease;
+    }
+
+    /* Estado oculto para móviles */
+    @media (max-width: 767px) {
+      #usuarios-conectados {
+        transform: translateX(100%);
+      }
+
+      #usuarios-conectados.mostrar {
+        transform: translateX(0);
+      }
+    }
+
+    /* Estado oculto para desktop */
+    @media (min-width: 768px) {
+      #usuarios-conectados {
+        transform: translateX(0);
+      }
+
+      #usuarios-conectados.oculto {
+        transform: translateX(100%);
+      }
+    }
+
+    #usuarios-conectados h3 {
+      margin-top: 0;
+      margin-bottom: 10px;
+      color: #66ccff;
+      border-bottom: 1px solid #444;
+      padding-bottom: 5px;
+      position: sticky;
+      top: 0;
+      background-color: rgba(43, 43, 43, 0.9);
+    }
+
+    #usuarios-conectados ul {
+      list-style-type: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    #usuarios-conectados li {
+      padding: 8px 5px;
+      border-bottom: 1px solid #333;
+      transition: background 0.2s;
+    }
+
+    #usuarios-conectados li:hover {
+      background-color: rgba(255,255,255,0.05);
+    }
+
+    #usuarios-conectados li:last-child {
+      border-bottom: none;
+    }
+
+    #toggle-usuarios {
+      background-color: #66ccff;
+      color: black;
+      border: none;
+      border-radius: 4px;
+      width: 40px;
+      height: 40px;
+      font-size: 1.2rem;
+      margin-right: 10px;
+      z-index: 1001;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    @media (min-width: 768px) {
+      #toggle-usuarios {
+        display: flex;
+      }
+    }
+
+    /* Estilos para el selector de emoticonos */
+    .emoji-btn {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 5px;
+      margin-right: 5px;
+      color: #66ccff;
+      transition: transform 0.2s;
+    }
+
+    .emoji-btn:hover {
+      transform: scale(1.1);
+    }
+
+    .emoji-picker {
+      position: fixed;
+      bottom: 70px;
+      left: 10px;
+      background-color: rgba(43, 43, 43, 0.95);
+      border-radius: 8px;
+      padding: 10px;
+      width: 300px;
+      max-height: 200px;
+      overflow-y: auto;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+      z-index: 1001;
+      display: none;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .emoji-picker.show {
+      display: flex;
+    }
+
+    .emoji-option {
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 5px;
+      transition: transform 0.2s;
+    }
+
+    .emoji-option:hover {
+      transform: scale(1.2);
+    }
+
+    /* Estilos para subida de archivos */
+    #upload-btn {
+      background-color: #66ccff;
+      color: black;
+      border: none;
+      border-radius: 4px;
+      padding: 10px;
+      cursor: pointer;
+      transition: background 0.3s;
+      margin-left: 5px;
+    }
+
+    #upload-btn:hover {
+      background-color: #3399cc;
+    }
+
+    #file-input {
+      display: none;
+    }
+
+    .imagen-mensaje {
+      max-width: 100%;
+      max-height: 300px;
+      border-radius: 8px;
+      margin-top: 5px;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    .imagen-mensaje:hover {
+      transform: scale(1.05);
+    }
+
+    .enlace-archivo {
+      color: #66ccff;
+      text-decoration: none;
+      word-break: break-all;
+    }
+
+    .enlace-archivo:hover {
+      text-decoration: underline;
+    }
+
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="content-wrapper">
+    <div class="header-container">
+      <button id="toggle-usuarios" title="Mostrar/ocultar usuarios">👥</button>
+      <h1>Chat David Principal</h1>
+    </div>
+    <button id="logout-btn" style="display: none;">Cerrar sesión</button>
+
+    <div id="login-section">
+      <form id="login-form">
+        <input id="usuario" placeholder="Usuario" required />
+        <input id="contrasena" type="password" placeholder="Contraseña" required />
+        <button type="submit">Entrar</button>
+      </form>
+    </div>
+
+    <div id="chat-section">
+      <div id="usuarios-conectados" class="oculto">
+        <h3>Usuarios conectados</h3>
+        <ul id="lista-usuarios"></ul>
+      </div>
+      <ul id="mensajes"></ul>
+      <form id="formulario">
+        <button type="button" id="emoji-btn" class="emoji-btn" title="Insertar emoji">😊</button>
+        <input id="input" autocomplete="off" placeholder="Escribe tu mensaje..." />
+        <button>Enviar</button>
+        <button type="button" id="clear-btn">Borrar</button>
+        <input type="file" id="file-input" accept="image/*" />
+        <button type="button" id="upload-btn" title="Subir imagen">📷</button>
+      </form>
+      <div id="emoji-picker" class="emoji-picker">
+        <!-- Emojis se agregarán dinámicamente -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio para el sonido de mensaje -->
+  <audio id="mensaje-sound" preload="auto">
+    <source src="https://assets.mixkit.co/sfx/preview/mixkit-arcade-game-jump-coin-216.mp3" type="audio/mpeg">
+    <source src="https://assets.mixkit.co/sfx/preview/mixkit-arcade-game-jump-coin-216.wav" type="audio/wav">
+    Tu navegador no soporta el elemento de audio.
+  </audio>
+
+<script>
+  let usuario = localStorage.getItem('usuario') || "";
+
+  const loginSection = document.getElementById('login-section');
+  const chatSection = document.getElementById('chat-section');
+  const logoutBtn = document.getElementById('logout-btn');
+  const mensajes = document.getElementById('mensajes');
+  const listaUsuarios = document.getElementById('lista-usuarios');
+  const toggleUsuariosBtn = document.getElementById('toggle-usuarios');
+  const usuariosConectados = document.getElementById('usuarios-conectados');
+  const emojiBtn = document.getElementById('emoji-btn');
+  const emojiPicker = document.getElementById('emoji-picker');
+  const mensajeSound = document.getElementById('mensaje-sound');
+  const uploadBtn = document.getElementById('upload-btn');
+  const fileInput = document.getElementById('file-input');
+  let socket;
+
+  // Lista de emojis populares
+  const emojis = [
+    '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇',
+    '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚',
+    '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🥸',
+    '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️',
+    '😣', '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡',
+    '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓',
+    '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄',
+    '😯', '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵',
+    '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑', '🤠',
+    '😈', '👿', '👹', '👺', '🤡', '💩', '👻', '💀', '☠️', '👽',
+    '👾', '🤖', '🎃', '😺', '😸', '😹', '😻', '😼', '😽', '🙀',
+    '😿', '😾', '🙈', '🙉', '🙊', '💋', '💌', '💘', '💝', '💖',
+    '💗', '💓', '💞', '💕', '💟', '❣️', '💔', '❤️', '🧡', '💛',
+    '💚', '💙', '💜', '🤎', '🖤', '🤍', '💯', '💢', '💥', '💫',
+    '💦', '💨', '🕳️', '💣', '💬', '👋', '🤚', '🖐️', '✋', '🖖',
+    '👌', '🤏', '✌️', '🤞', '🤟',  '🤘', '🤙', '👈', '👉', '👆',
+    '🖕', '👇', '☝️', '👍', '👎', '✊', '👊', '🤛', '🤜', '👏',
+    '🙌', '👐', '🤲', '🤝', '🙏', '✍️', '💅', '🤳', '💪', '🦾',
+    '🦿', '🦵', '🦶', '👂', '🦻', '👃', '🧠', '🦷', '🦴', '👀',
+    '👁️', '👅', '👄', '👶', '🧒', '👦', '👧', '🧑', '👨', '👩',
+    '🧔', '🧓', '👴', '👵', '🙍', '🙎', '🙅', '🙆', '💁', '🙋',
+    '🧏', '🙇', '🤦', '🤷', '👮', '🕵️', '💂', '👷', '🤴', '👸',
+    '👳', '👲', '🧕', '🤵', '👰', '🤰', '🤱', '👼', '🎅', '🤶',
+    '🦸', '🦹', '🧙', '🧚', '🧛', '🧜', '🧝', '🧞', '🧟', '💆',
+    '💇', '🚶', '🧍', '🧎', '🏃', '💃', '🕺', '🕴️', '👯', '🧖',
+    '🧗', '🤺', '🏇', '⛷️', '🏂', '🏌️', '🏄', '🚣', '🏊', '⛹️',
+    '🏋️', '🚴', '🚵', '🤸', '🤼', '🤽', '🤾', '🤹', '🧘', '🛀',
+    '🛌', '👭', '👫', '👬', '💏', '💑', '👪', '🗣️', '👤', '👥',
+    '🫂', '👣'
+  ];
+
+  function reproducirSonido() {
+    try {
+      mensajeSound.volume = 0.3;
+      mensajeSound.currentTime = 0;
+      mensajeSound.play().catch(e => console.log("No se pudo reproducir el sonido:", e));
+    } catch (e) {
+      console.error("Error al reproducir sonido:", e);
+    }
+  }
+
+  function mostrarMensaje(msg) {
+    const li = document.createElement('li');
+    li.className = msg.usuario === usuario ? 'mio' : 'otro';
+
+    const burbuja = document.createElement('div');
+    burbuja.className = 'burbuja';
+
+    const contenido = document.createElement('div');
+    contenido.className = 'contenido';
+
+    if (msg.esImagen) {
+      contenido.innerHTML = `${msg.usuario}:<br>`;
+      const img = document.createElement('img');
+      img.src = msg.mensaje;
+      img.className = 'imagen-mensaje';
+      img.onclick = () => window.open(msg.mensaje, '_blank');
+      contenido.appendChild(img);
+    } else {
+      contenido.innerHTML = `${msg.usuario}: ${msg.mensaje}`;
+    }
+
+    const hora = document.createElement('div');
+    hora.className = 'hora';
+    hora.textContent = msg.hora;
+
+    burbuja.appendChild(contenido);
+    burbuja.appendChild(hora);
+    li.appendChild(burbuja);
+    mensajes.appendChild(li);
+
+    mensajes.scrollTo({
+      top: mensajes.scrollHeight,
+      behavior: 'smooth'
+    });
+
+    if (msg.usuario !== usuario) {
+      setTimeout(reproducirSonido, 100);
+    }
+  }
+
+  function actualizarListaUsuarios(usuarios) {
+    listaUsuarios.innerHTML = '';
+    usuarios.forEach(user => {
+      const li = document.createElement('li');
+      li.textContent = user;
+      if (user === usuario) {
+        li.style.fontWeight = 'bold';
+        li.style.color = '#66ccff';
+      }
+      listaUsuarios.appendChild(li);
+    });
+  }
+
+  function toggleUsuarios() {
+    usuariosConectados.classList.toggle('oculto');
+    usuariosConectados.classList.toggle('mostrar');
+  }
+
+  function toggleEmojiPicker() {
+    emojiPicker.classList.toggle('show');
+  }
+
+  function agregarEmoji(emoji) {
+    const input = document.getElementById('input');
+    input.value += emoji;
+    input.focus();
+  }
+
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <!-- ... (todo el head se mantiene igual hasta el script final) -->
+</head>
+<body>
+  <!-- ... (todo el body HTML se mantiene igual hasta el script final) -->
+
+<script>
+  // ... (todo el código anterior se mantiene igual hasta la función iniciarChat)
+
+  function iniciarChat() {
+    loginSection.style.display = 'none';
+    chatSection.style.display = 'flex';
+    logoutBtn.style.display = 'block';
+    document.body.classList.add('chat-activo');
+
+    setTimeout(() => {
+      try {
+        mensajeSound.volume = 0;
+        mensajeSound.play().then(() => {
+          mensajeSound.pause();
+          mensajeSound.currentTime = 0;
+          mensajeSound.volume = 0.3;
+        }).catch(e => console.log("Precarga de sonido fallida:", e));
+      } catch (e) {
+        console.error("Error en precarga de sonido:", e);
+      }
+    }, 1000);
+
+    socket = io();
+
+    socket.emit('nuevoUsuario', usuario);
+
+    socket.on('actualizarUsuarios', actualizarListaUsuarios);
+
+    socket.on('historial', (mensajesHistorial) => {
+      mensajes.innerHTML = '';
+      mensajesHistorial.forEach(mostrarMensaje);
+      setTimeout(() => {
+        mensajes.scrollTo({
+          top: mensajes.scrollHeight,
+          behavior: 'auto'
+        });
+      }, 100);
+    });
+
+    socket.on('mensaje', mostrarMensaje);
+
+    socket.on('mensajes_borrados', () => {
+      mensajes.innerHTML = '';
+      const notification = document.createElement('div');
+      notification.textContent = 'Todos los mensajes han sido borrados';
+      notification.style.position = 'fixed';
+      notification.style.bottom = '100px';
+      notification.style.right = '20px';
+      notification.style.background = '#4CAF50';
+      notification.style.color = 'white';
+      notification.style.padding = '10px';
+      notification.style.borderRadius = '5px';
+      notification.style.zIndex = '10000';
+      document.body.appendChild(notification);
+
+      setTimeout(() => {
+        document.body.removeChild(notification);
+      }, 3000);
+    });
+
+    document.getElementById('formulario').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('input');
+      if (input.value.trim() !== '') {
+        socket.emit('mensaje', { usuario, mensaje: input.value });
+        input.value = '';
+        emojiPicker.classList.remove('show');
+        reproducirSonido();
+      }
+    });
+
+    document.getElementById('clear-btn').addEventListener('click', () => {
+      if (confirm('¿Estás seguro de que quieres borrar TODOS los mensajes permanentemente?\nEsta acción no se puede deshacer.')) {
+        socket.emit('borrar_mensajes');
+      }
+    });
+
+    if (toggleUsuariosBtn) {
+      toggleUsuariosBtn.addEventListener('click', toggleUsuarios);
+    }
+
+    emojis.forEach(emoji => {
+      const span = document.createElement('span');
+      span.className = 'emoji-option';
+      span.textContent = emoji;
+      span.addEventListener('click', () => agregarEmoji(emoji));
+      emojiPicker.appendChild(span);
+    });
+
+    emojiBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleEmojiPicker();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!emojiBtn.contains(e.target) && !emojiPicker.contains(e.target)) {
+        emojiPicker.classList.remove('show');
+      }
+    });
+
+    uploadBtn.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch('/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          socket.emit('mensaje', {
+            usuario: usuario,
+            mensaje: data.url,
+            esImagen: true
+          });
+        } else {
+          const error = await response.text();
+          alert(error);
+        }
+      } catch (err) {
+        console.error('Error al subir archivo:', err);
+        alert('Error al subir el archivo');
+      } finally {
+        e.target.value = '';
+      }
+    });
+  }<!DOCTYPE html>
+<html lang="es">
+<head>
+  <!-- ... (todo el head se mantiene igual hasta el script final) -->
+</head>
+<body>
+  <!-- ... (todo el body HTML se mantiene igual hasta el script final) -->
+
+<script>
+  // ... (todo el código anterior se mantiene igual hasta la función iniciarChat)
+
+  function iniciarChat() {
+    loginSection.style.display = 'none';
+    chatSection.style.display = 'flex';
+    logoutBtn.style.display = 'block';
+    document.body.classList.add('chat-activo');
+
+    setTimeout(() => {
+      try {
+        mensajeSound.volume = 0;
+        mensajeSound.play().then(() => {
+          mensajeSound.pause();
+          mensajeSound.currentTime = 0;
+          mensajeSound.volume = 0.3;
+        }).catch(e => console.log("Precarga de sonido fallida:", e));
+      } catch (e) {
+        console.error("Error en precarga de sonido:", e);
+      }
+    }, 1000);
+
+    socket = io();
+
+    socket.emit('nuevoUsuario', usuario);
+
+    socket.on('actualizarUsuarios', actualizarListaUsuarios);
+
+    socket.on('historial', (mensajesHistorial) => {
+      mensajes.innerHTML = '';
+      mensajesHistorial.forEach(mostrarMensaje);
+      setTimeout(() => {
+        mensajes.scrollTo({
+          top: mensajes.scrollHeight,
+          behavior: 'auto'
+        });
+      }, 100);
+    });
+
+    socket.on('mensaje', mostrarMensaje);
+
+    socket.on('mensajes_borrados', () => {
+      mensajes.innerHTML = '';
+      const notification = document.createElement('div');
+      notification.textContent = 'Todos los mensajes han sido borrados';
+      notification.style.position = 'fixed';
+      notification.style.bottom = '100px';
+      notification.style.right = '20px';
+      notification.style.background = '#4CAF50';
+      notification.style.color = 'white';
+      notification.style.padding = '10px';
+      notification.style.borderRadius = '5px';
+      notification.style.zIndex = '10000';
+      document.body.appendChild(notification);
+
+      setTimeout(() => {
+        document.body.removeChild(notification);
+      }, 3000);
+    });
+
+    document.getElementById('formulario').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('input');
+      if (input.value.trim() !== '') {
+        socket.emit('mensaje', { usuario, mensaje: input.value });
+        input.value = '';
+        emojiPicker.classList.remove('show');
+        reproducirSonido();
+      }
+    });
+
+    document.getElementById('clear-btn').addEventListener('click', () => {
+      if (confirm('¿Estás seguro de que quieres borrar TODOS los mensajes permanentemente?\nEsta acción no se puede deshacer.')) {
+        socket.emit('borrar_mensajes');
+      }
+    });
+
+    if (toggleUsuariosBtn) {
+      toggleUsuariosBtn.addEventListener('click', toggleUsuarios);
+    }
+
+    emojis.forEach(emoji => {
+      const span = document.createElement('span');
+      span.className = 'emoji-option';
+      span.textContent = emoji;
+      span.addEventListener('click', () => agregarEmoji(emoji));
+      emojiPicker.appendChild(span);
+    });
+
+    emojiBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleEmojiPicker();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!emojiBtn.contains(e.target) && !emojiPicker.contains(e.target)) {
+        emojiPicker.classList.remove('show');
+      }
+    });
+
+    uploadBtn.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch('/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          socket.emit('mensaje', {
+            usuario: usuario,
+            mensaje: data.url,
+            esImagen: true
+          });
+        } else {
+          const error = await response.text();
+          alert(error);
+        }
+      } catch (err) {
+        console.error('Error al subir archivo:', err);
+        alert('Error al subir el archivo');
+      } finally {
+        e.target.value = '';
+      }
+    });
+  }
+
+
+  document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const user = document.getElementById('usuario').value;
+    const pass = document.getElementById('contrasena').value;
+
+    try {
+      const res = await fetch('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usuario: user, contrasena: pass })
+      });
+
+      if (res.ok) {
+        localStorage.setItem('usuario', user);
+        usuario = user;
+        iniciarChat();
+      } else {
+        alert('Credenciales incorrectas');
+      }
+    } catch (err) {
+      console.error('Error al iniciar sesión', err);
+      alert('Error de conexión con el servidor');
+    }
+  });
+
+  logoutBtn.addEventListener('click', () => {
+    localStorage.removeItem('usuario');
+    usuario = '';
+    socket.disconnect();
+    document.body.classList.remove('chat-activo');
+    location.reload();
+  });
+
+  document.getElementById('clear-btn').addEventListener('click', () => {
+    mensajes.innerHTML = '';
+  });
+
+  if (usuario) {
+    iniciarChat();
+  }
+
+  window.addEventListener('resize', function() {
+    if (window.innerWidth >= 768) {
+      usuariosConectados.classList.remove('mostrar');
+      usuariosConectados.classList.remove('oculto');
+    } else {
+      if (!usuariosConectados.classList.contains('mostrar')) {
+        usuariosConectados.classList.add('oculto');
+      }
+    }
+  });
+
+  document.addEventListener('DOMContentLoaded', () => {
+    if (window.innerWidth >= 768) {
+      usuariosConectados.classList.remove('oculto');
+    } else {
+      usuariosConectados.classList.add('oculto');
+    }
+  });
+</script>
+</body>
+</html>

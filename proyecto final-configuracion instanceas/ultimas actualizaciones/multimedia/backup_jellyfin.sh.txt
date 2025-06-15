@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Ruta local y destino S3
+ORIGEN="/mnt/jellyfin_data/"
+DESTINO="s3://jellyfin-backups1/jellyfin_data/"
+
+# Registro de tiempo
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Iniciando backup de $ORIGEN a $DESTINO"
+
+# Realiza el backup excluyendo lost+found y mostrando archivos nuevos/modificados
+aws s3 sync "$ORIGEN" "$DESTINO" --exact-timestamps --exclude "lost+found/*" --only-show-errors
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Backup finalizado."

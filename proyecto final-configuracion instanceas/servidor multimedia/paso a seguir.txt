@@ -1,0 +1,50 @@
+
+Para comenzar, ejecute el siguiente comando para instalar dependencias como software-properties-common, apt-transport-https, ca-certificates, gnupg y curl en su sistema Ubuntu.
+
+- sudo apt install software-properties-common apt-transport-https ca-certificates gnupg curl -y
+
+
+Luego, ejecute el siguiente comando para habilitar el repositorio 'universo' en su máquina Ubuntu.
+
+- sudo add-apt-repository universe
+
+
+
+Ahora ejecute el siguiente comando para crear un nuevo directorio /etc/apt/keyrings y descargue en él la clave GPG para el repositorio Jellyfin.
+
+
+- sudo mkdir -p /etc/apt/keyrings
+
+
+- curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/jellyfin.gpg
+
+
+A continuación, ejecute el siguiente comando para agregar el repositorio Jellyfin a su máquina Ubuntu.
+
+
+cat <<EOF | sudo tee /etc/apt/sources.list.d/jellyfin.sources
+Types: deb
+URIs: https://repo.jellyfin.org/$( awk -F'=' '/^ID=/{ print $NF }' /etc/os-release )
+Suites: $( awk -F'=' '/^VERSION_CODENAME=/{ print $NF }' /etc/os-release )
+Components: main
+Architectures: $( dpkg --print-architecture )
+Signed-By: /etc/apt/keyrings/jellyfin.gpg
+EOF
+
+
+
+Por último, actualice y actualice el índice del paquete en su sistema Ubuntu usando el siguiente comando. Esto recuperará información del nuevo paquete, incluso del repositorio de Jellyfin.
+
+- sudo apt update
+
+Después de agregar el repositorio de Jellyfin, ahora puede iniciar la instalación de Jellyfin en su servidor Ubuntu.
+
+Ejecute el siguiente comando apt para instalar el paquete jellyfin. Cuando se le solicite, ingrese Y para confirmar y continuar.
+
+- sudo apt install jellyfin
+
+Una vez finalizada la instalación, ejecute el siguiente comando para verificar el servicio jellyfin y asegurarse de que el servicio esté ejecutándose y habilitado.
+
+- sudo systemctl is-enabled jellyfin
+- sudo systemctl status jellyfin
+

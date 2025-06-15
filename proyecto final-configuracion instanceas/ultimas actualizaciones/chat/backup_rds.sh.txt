@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Variables
+FECHA=$(date +%F)
+NOMBRE_DB="chat-db"
+ENDPOINT="chat-db.c70k44m6atwt.us-east-1.rds.amazonaws.com"
+USUARIO="admin"
+CONTRASENA="admin123"
+ARCHIVO="/home/ubuntu/backup-$FECHA.sql"
+BUCKET="rds-backups-david"
+
+# Dump de la base de datos
+mysqldump -h $ENDPOINT -u $USUARIO -p$CONTRASENA --databases $NOMBRE_DB > $ARCHIVO
+
+# Subida a S3
+aws s3 cp $ARCHIVO s3://$BUCKET/
+
+# Borrado local del backup
+rm $ARCHIVO

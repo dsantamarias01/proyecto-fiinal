@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# Directorios a sincronizar
+SOURCE_DIR="/mnt/jellyfin_data/"
+DEST_DIR="ubuntu@10.228.3.30:/mnt/jellyfin_data/"
+
+# Ejecutar rsync para sincronizar los archivos y las carpetas, excluyendo lost+found
+rsync -avz --progress --exclude 'lost+found' --delete $SOURCE_DIR $DEST_DIR

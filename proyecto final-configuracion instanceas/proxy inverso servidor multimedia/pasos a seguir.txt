@@ -1,0 +1,204 @@
+mpezamos con el Proxy Inverso de Jellyfin (IP privada: 10.228.1.10)
+
+# Conéctate a la instancia
+ssh -i "tu-clave.pem" ubuntu@IP-PUBLICA
+
+# Una vez dentro, instala CloudWatch Agent
+wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+sudo dpkg -i amazon-cloudwatch-agent.deb
+
+# Crear un archivo de configuración básico para métricas
+sudo tee /opt/aws/amazon-cloudwatch-agent/bin/config.json > /dev/null <<EOF
+{
+  "agent": {
+    "metrics_collection_interval": 60,
+    "logfile": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log",
+    "run_as_user": "root"
+  },
+  "metrics": {
+    "append_dimensions": {
+      "InstanceId": "\${aws:InstanceId}"
+    },
+    "metrics_collected": {
+      "cpu": {
+        "measurement": ["cpu_usage_idle", "cpu_usage_iowait"],
+        "metrics_collection_interval": 60,
+        "totalcpu": true
+      },
+      "mem": {
+        "measurement": ["mem_used_percent"],
+        "metrics_collection_interval": 60
+      },
+      "disk": {
+        "measurement": ["used_percent"],
+        "metrics_collection_interval": 60,
+        "resources": ["*"]
+      }
+    }
+  }
+}
+EOF
+
+# Lanzar el agente de CloudWatch
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config -m ec2 \
+  -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json \
+  -s
+
+
+Configurar Nginx para el dominio multimedia-david.duckdns.org
+
+
+ Prepara el servidor
+
+sudo apt update
+sudo apt install nginx -y
+
+1. Crear el archivo de configuración en /etc/nginx/sites-available/
+
+
+sudo nano /etc/nginx/sites-available/jellyfin
+
+
+pegamos esto:
+
+server {
+    listen 80;
+    server_name multimedia-david.duckdns.org;
+
+    # Redireccionar HTTP a HTTPS automáticamente
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name multimedia-david.duckdns.org;
+
+    # Rutas a los certificados SSL de Let's Encrypt
+    ssl_certificate /etc/letsencrypt/live/multimedia-david.duckdns.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/multimedia-david.duckdns.org/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+    # Seguridad SSL extra
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    # Configuración del proxy para Jellyfin
+    location / {
+        proxy_pass http://10.228.3.20:8096; # <-- IP PRIVADA del servidor de Jellyfin
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Opciones para WebSocket (importantísimo para Jellyfin)
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+
+2. Habilitar el sitio en Nginx
+
+
+sudo ln -s /etc/nginx/sites-available/jellyfin /etc/nginx/sites-enabled/
+
+revisa que todo esté bien:
+
+sudo nginx -t
+
+sudo systemctl reload nginx
+
+
+
+Conseguir SSL con Let's Encrypt
+sudo apt install -y nginx certbot python3-certbot-nginx
+
+sudo certbot --nginx -d multimedia-david.duckdns.org
+
+con root:
+
+cd /etc/letsencrypt/live/multimedia-david.duckdns.org/
+
+Permisos normales que deben tener:
+
+Archivo	Propietario	Permisos
+/etc/letsencrypt/live/	root	700 (drwx------)
+fullchain.pem	root	644 (-rw-r--r--)
+privkey.pem	root	600 (-rw-------)
+
+
+
+
+
+
+
+
+
+
+archivo conf proxy que añade el balanceo de carga
+
+
+upstream jellyfin_backend {
+    server 10.228.3.20:8096;        # Servidor Jellyfin principal
+    server 10.228.3.30:8096 backup; # Servidor Jellyfin de respaldo
+}
+
+server {
+    listen 80;
+    server_name multimedia-david.duckdns.org;
+
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name multimedia-david.duckdns.org;
+
+    ssl_certificate /etc/ssl/certs/multimedia-david.duckdns.org-fullchain.pem;
+    ssl_certificate_key /etc/ssl/private/multimedia-david.duckdns.org-privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    location / {
+        proxy_pass http://jellyfin_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

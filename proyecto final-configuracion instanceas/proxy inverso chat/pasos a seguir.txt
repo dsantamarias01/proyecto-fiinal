@@ -1,0 +1,84 @@
+Configurar el Proxy Inverso para el Chat
+
+1. Prepara el servidor
+
+sudo apt update
+sudo apt install nginx -y
+
+2. Crear configuración en /etc/nginx/sites-available/
+
+sudo nano /etc/nginx/sites-available/chat-david
+
+Contenido del archivo:
+
+server {
+    listen 80;
+    server_name chat-david2.duckdns.org;
+
+    # Redirigir todo el tráfico HTTP a HTTPS
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name chat-david2.duckdns.org;
+
+    # Certificados SSL
+    ssl_certificate     /etc/ssl/chat-david.duckdns.org/fullchain.pem;
+    ssl_certificate_key /etc/ssl/chat-david.duckdns.org/privkey.pem;
+
+    # Protocolos y ciphers recomendados para una conexión segura
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384';
+    ssl_prefer_server_ciphers off;
+
+    # Cabeceras de seguridad recomendadas
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    # Aquí quitamos la cabecera X-Frame-Options porque bloquea el iframe
+    # add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+
+    location / {
+        proxy_pass http://10.228.4.10:3000;  # o el puerto que use tu servidor Node.js
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Oculta la cabecera X-Frame-Options enviada por el backend (Node.js)
+        proxy_hide_header X-Frame-Options;
+    }
+}
+
+3. Habilitar el sitio en Nginx
+
+sudo ln -s /etc/nginx/sites-available/chat-david /etc/nginx/sites-enabled/
+
+Comprueba que todo esté bien:
+
+sudo nginx -t
+
+sudo systemctl reload nginx
+
+
+SACAR CERTIFICADO CON CERBOT DUCKDNS
+sudo apt install -y nginx certbot python3-certbot-nginx
+
+sudo certbot --nginx -d chat-david.duckdns.org
+
+con root:
+
+cd /etc/letsencrypt/live/multimedia-david.duckdns.org/
+
+Permisos normales que deben tener:
+
+Archivo	Propietario	Permisos
+/etc/letsencrypt/live/	root	700 (drwx------)
+fullchain.pem	root	644 (-rw-r--r--)
+privkey.pem	root	600 (-rw-------)

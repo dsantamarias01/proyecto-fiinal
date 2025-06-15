@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# Verifica que se hayan pasado 2 argumentos
+if [ "$#" -ne 2 ]; then
+  echo "Uso: $0 <usuario> <contraseña>"
+  exit 1
+fi
+
+USUARIO=$1
+CLAVE=$2
+
+# Configuración de base de datos
+DB_HOST="chat-db.cj6r6iyewafz.us-east-1.rds.amazonaws.com"
+DB_USER="admin"
+DB_PASS="admin123"
+DB_NAME="chat-db"
+
+# Generar el hash de la contraseña
+HASH=$(node -e "const bcrypt = require('bcryptjs'); console.log(bcrypt.hashSync('$CLAVE', 10));")
+
+# Verifica que el hash no esté vacío
+if [ -z "$HASH" ]; then
+  echo "❌ Error al generar el hash de la contraseña"
+  exit 1
+fi
+
+# Verificar si el usuario ya existe en la base de datos
+EXISTE=$(mysql -h $DB_HOST -u $DB_USER -p$DB_PASS -D $DB_NAME -se "SELECT COUNT(*) FROM usuarios WHERE username = '$USUARIO';")
+
+if [[ "$EXISTE" =~ ^[0-9]+$ ]] && [ "$EXISTE" -gt 0 ]; then
+  echo "⚠️ El usuario '$USUARIO' ya existe. No se insertó."
+  exit 1
+fi
+
+# Insertar el nuevo usuario con su contraseña hasheada
+mysql -h $DB_HOST -u $DB_USER -p$DB_PASS -D $DB_NAME -e "INSERT INTO usuarios (username, password) VALUES ('$USUARIO', '$HASH');"
+
+echo "✅ Usuario '$USUARIO' registrado correctamente."

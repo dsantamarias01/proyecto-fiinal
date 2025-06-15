@@ -1,0 +1,105 @@
+# ========================
+# BLOQUE UPSTREAM
+# ========================
+# Define el grupo de servidores backend (balanceo de carga entre las instancias del servidor de chat)
+upstream chat_backend {
+    # Dos instancias de backend en la red privada
+    server 10.228.4.10:3000 weight=5 max_fails=3 fail_timeout=30s;
+    server 10.228.4.11:3000 weight=5 max_fails=3 fail_timeout=30s;
+
+    # Conexiones persistentes para mejorar el rendimiento
+    keepalive 32;
+    keepalive_timeout 60s;
+}
+
+# ========================
+# BLOQUE REDIRECCIÓN HTTP -> HTTPS
+# ========================
+server {
+    listen 80;
+    server_name chat-david2.duckdns.org;
+
+    # Redirige automáticamente todo el tráfico HTTP a HTTPS
+    return 301 https://$host$request_uri;
+}
+
+# ========================
+# BLOQUE HTTPS PRINCIPAL
+# ========================
+server {
+    listen 443 ssl http2;
+    server_name chat-david2.duckdns.org;
+
+    # Certificados SSL (Let's Encrypt o similar)
+    ssl_certificate     /etc/ssl/chat-david.duckdns.org/fullchain.pem;
+    ssl_certificate_key /etc/ssl/chat-david.duckdns.org/privkey.pem;
+
+    # Protocolos y parámetros SSL seguros
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # ========================
+    # RUTA GENERAL
+    # ========================
+    location / {
+        # Pasa todas las peticiones al grupo de servidores backend
+        proxy_pass http://chat_backend;
+
+        # Usa HTTP/1.1 y permite upgrade para WebSockets
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Mantiene el encabezado original del host
+        proxy_set_header Host $host;
+
+        # Evita el uso de caché cuando se actualiza WebSocket
+        proxy_cache_bypass $http_upgrade;
+
+        # Encabezados de cliente para trazabilidad
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Tiempos de espera razonables para solicitudes normales
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+
+        # Buffers de proxy para mejorar manejo de datos
+        proxy_buffers 8 16k;
+        proxy_buffer_size 32k;
+    }
+
+    # ========================
+    # RUTA PARA SOCKET.IO (WebSocket)
+    # ========================
+    location /socket.io/ {
+        # Pasa específicamente las rutas de WebSocket a los servidores backend
+        proxy_pass http://chat_backend/socket.io/;
+
+        # Requiere HTTP/1.1 para WebSockets
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Host original
+        proxy_set_header Host $host;
+
+        # Importante para evitar buffering en tiempo real
+        proxy_buffering off;
+        proxy_redirect off;
+
+        # Encabezados para identificar al cliente
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Tiempos de espera largos para mantener WebSockets abiertos
+        proxy_connect_timeout 7s;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+}

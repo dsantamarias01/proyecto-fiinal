@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Chat Seguro</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      color: #e1e1e1;
+      background-image: url('https://wallpapers.com/images/hd/the-nightmare-before-christmas-faces-of-jack-nezhqzoo8asocduo.jpg');
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+    }
+
+    #content-wrapper {
+      background-color: rgba(24, 24, 24, 0.85);
+      padding: 20px;
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+    }
+
+    h1 {
+      color: #66ccff;
+      text-align: center;
+      margin-top: 0;
+    }
+
+    input, button {
+      padding: 10px;
+      margin: 5px;
+      border-radius: 4px;
+      border: none;
+      font-size: 1rem;
+    }
+
+    input {
+      background-color: #2b2b2b;
+      color: #f0f0f0;
+      border: 1px solid #444;
+    }
+
+    button {
+      background-color: #66ccff;
+      color: black;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    button:hover {
+      background-color: #3399cc;
+    }
+
+    #mensajes {
+      list-style-type: none;
+      padding: 0;
+      overflow-y: auto;
+      flex-grow: 1;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #mensajes li {
+      display: flex;
+      max-width: 70%;
+      animation: fadeInUp 0.3s ease forwards;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+
+    #mensajes li.mio {
+      justify-content: flex-start;
+      align-self: flex-start;
+    }
+
+    #mensajes li.otro {
+      justify-content: flex-end;
+      align-self: flex-end;
+    }
+
+    .burbuja {
+      border-radius: 10px;
+      padding: 10px 15px;
+      position: relative;
+      color: #f0f0f0;
+      border-left: 4px solid #66ccff;
+      max-width: 100%;
+      word-break: break-word;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      transition: box-shadow 0.3s ease;
+    }
+
+    .burbuja:hover {
+      box-shadow: 0 4px 10px rgba(0,0,0,0.6);
+    }
+
+    /* Bocadillo mensajes propios */
+    .mio .burbuja {
+      background-color: #4a90e2;  /* azul suave */
+      border-left-color: #357ABD;
+    }
+
+    /* Bocadillo mensajes de otros */
+    .otro .burbuja {
+      background-color: #3c3c3c; /* gris carbón oscuro, no negro */
+      border-left-color: #66ccff;
+    }
+
+    .burbuja .contenido {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .burbuja .hora {
+      font-size: 0.75em;
+      color: #ccc;
+      text-align: right;
+      margin-top: 5px;
+    }
+
+    #formulario {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    #input {
+      flex: 1;
+    }
+
+    #logout-btn {
+      position: absolute;
+      top: 15px;
+      right: 20px;
+      background-color: #ff4d4d;
+    }
+
+    #logout-btn:hover {
+      background-color: #cc0000;
+    }
+
+    #chat-section {
+      display: none;
+      flex-direction: column;
+      flex-grow: 1;
+    }
+
+    #login-section {
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+
+    /* Animación para la entrada de mensajes */
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="content-wrapper">
+    <h1>Chat en Vivo David</h1>
+    <button id="logout-btn" style="display: none;">Cerrar sesión</button>
+
+    <div id="login-section">
+      <form id="login-form">
+        <input id="usuario" placeholder="Usuario" required />
+        <input id="contrasena" type="password" placeholder="Contraseña" required />
+        <button type="submit">Entrar</button>
+      </form>
+    </div>
+
+    <div id="chat-section">
+      <ul id="mensajes"></ul>
+      <form id="formulario">
+        <input id="input" autocomplete="off" placeholder="Escribe tu mensaje..." />
+        <button>Enviar</button>
+      </form>
+    </div>
+  </div>
+<script>
+  let usuario = localStorage.getItem('usuario') || "";
+
+  const loginSection = document.getElementById('login-section');
+  const chatSection = document.getElementById('chat-section');
+  const logoutBtn = document.getElementById('logout-btn');
+  const mensajes = document.getElementById('mensajes');
+  let socket;
+
+  function iniciarChat() {
+    loginSection.style.display = 'none';
+    chatSection.style.display = 'flex';
+    logoutBtn.style.display = 'inline-block';
+
+    socket = io();
+
+    const form = document.getElementById('formulario');
+    const input = document.getElementById('input');
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (input.value) {
+        socket.emit('mensaje', { usuario, mensaje: input.value });
+        input.value = '';
+      }
+    });
+
+    socket.on('mensaje', (msg) => {
+      const li = document.createElement('li');
+      li.className = msg.usuario === usuario ? 'mio' : 'otro';
+
+      const burbuja = document.createElement('div');
+      burbuja.className = 'burbuja';
+
+      const contenido = document.createElement('div');
+      contenido.className = 'contenido';
+      contenido.textContent = `${msg.usuario}: ${msg.mensaje}`;
+
+      const hora = document.createElement('div');
+      hora.className = 'hora';
+      hora.textContent = msg.hora;
+
+      burbuja.appendChild(contenido);
+      burbuja.appendChild(hora);
+      li.appendChild(burbuja);
+      mensajes.appendChild(li);
+      mensajes.scrollTop = mensajes.scrollHeight;
+    });
+  }
+
+  if (usuario) {
+    iniciarChat();
+  }
+
+  document.getElementById('login-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    usuario = document.getElementById('usuario').value;
+    const contrasena = document.getElementById('contrasena').value;
+
+    fetch('/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario, contrasena })
+    })
+    .then(res => {
+      if (res.ok) {
+        localStorage.setItem('usuario', usuario);
+        iniciarChat();
+      } else {
+        alert('Login fallido. Usuario o contraseña incorrectos.');
+      }
+    })
+    .catch(err => {
+      console.error('Error al iniciar sesión:', err);
+      alert('Error en el servidor');
+    });
+  });
+
+  logoutBtn.addEventListener('click', () => {
+    localStorage.removeItem('usuario');
+    location.reload();
+  });
+</script>
+
+</body>
+</html>
