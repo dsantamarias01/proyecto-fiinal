@@ -1,35 +1,88 @@
+# ==============================================
+# CONFIGURACIÓN MEJORADA DE BALANCEO DE CARGA
+# ==============================================
 upstream jellyfin_backend {
-    server 10.228.3.20:8096;        # Servidor Jellyfin principal
-    server 10.228.3.30:8096 backup; # Servidor Jellyfin de respaldo
+    # Servidor principal con pesos y timeouts ajustados
+    server 10.228.3.20:8096 weight=3 max_conns=100 max_fails=2 fail_timeout=15s;
+
+    # Servidor de respaldo con parámetros específicos
+    server 10.228.3.30:8096 weight=1 max_conns=50 max_fails=2 fail_timeout=15s backup;
+
+    # Mecanismo de balanceo
+    least_conn; # Prefiere el servidor con menos conexiones
+
+    # Timeout de conexión al backend
+    keepalive 32; # Conexiones persistentes
+    keepalive_timeout 60s;
+    keepalive_requests 1000;
 }
 
+# ==============================================
+# SERVER BLOCK PRINCIPAL HTTPS (OPTIMIZADO)
+# ==============================================
 server {
-    listen 80;
+    listen 443 ssl http2;
     server_name multimedia-david.duckdns.org;
 
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name multimedia-david.duckdns.org;
-
+    # Certificados SSL (sin cambios)
     ssl_certificate /etc/ssl/certs/multimedia-david.duckdns.org-fullchain.pem;
     ssl_certificate_key /etc/ssl/private/multimedia-david.duckdns.org-privkey.pem;
 
+    # Configuración SSL mejorada
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
-    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_buffer_size 8k;
 
+    # Optimización de recursos estáticos
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2)$ {
+        expires 365d;
+        add_header Cache-Control "public, no-transform";
+        proxy_pass http://jellyfin_backend;
+        proxy_cache_valid 200 302 365d;
+        proxy_cache_valid 404 1m;
+    }
+
+    # Configuración principal del proxy
     location / {
         proxy_pass http://jellyfin_backend;
+
+        # Cabeceras mejoradas
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Server $host;
 
+        # Configuración WebSocket optimizada
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
+
+        # Timeouts ajustados
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 180s;
+
+        # Buffering optimizado para streaming
+        proxy_buffering on;
+        proxy_buffer_size 16k;
+        proxy_buffers 4 32k;
+        proxy_busy_buffers_size 64k;
+        proxy_max_temp_file_size 0;
+
+        # Control de caché
+        proxy_cache off;
+        proxy_no_cache $http_pragma $http_authorization;
+    }
+
+    # Health check endpoint
+    location /nginx-health {
+        access_log off;
+        return 200 "Healthy";
+        add_header Content-Type text/plain;
     }
 }
